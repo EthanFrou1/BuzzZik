@@ -1,0 +1,6 @@
+@BuzzZikApi.Api_HostAddress = http://localhost:5206
+
+GET {{BuzzZikApi.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

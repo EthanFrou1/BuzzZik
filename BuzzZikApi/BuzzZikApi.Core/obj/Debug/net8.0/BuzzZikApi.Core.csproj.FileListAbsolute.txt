@@ -1,0 +1,13 @@
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\bin\Debug\net8.0\BuzzZikApi.Core.deps.json
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\bin\Debug\net8.0\BuzzZikApi.Core.dll
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\bin\Debug\net8.0\BuzzZikApi.Core.pdb
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\obj\Debug\net8.0\BuzzZikApi.Core.csproj.AssemblyReference.cache
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\obj\Debug\net8.0\BuzzZikApi.Core.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\obj\Debug\net8.0\BuzzZikApi.Core.AssemblyInfoInputs.cache
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\obj\Debug\net8.0\BuzzZikApi.Core.AssemblyInfo.cs
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\obj\Debug\net8.0\BuzzZikApi.Core.csproj.CoreCompileInputs.cache
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\obj\Debug\net8.0\BuzzZikApi.Core.sourcelink.json
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\obj\Debug\net8.0\BuzzZikApi.Core.dll
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\obj\Debug\net8.0\refint\BuzzZikApi.Core.dll
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\obj\Debug\net8.0\BuzzZikApi.Core.pdb
+C:\Users\ethan\Documents\GitHub\BuzzZik\BuzzZikApi\BuzzZikApi.Core\obj\Debug\net8.0\ref\BuzzZikApi.Core.dll

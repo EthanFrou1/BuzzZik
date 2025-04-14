@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "FI/tQFdaK6XoJgrG5Kf6vonI8qO2dKC2O2JWIbt17WA=",
+  "Source": "BuzzZikApi.Api",
+  "BasePath": "_content/BuzzZikApi.Api",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}
