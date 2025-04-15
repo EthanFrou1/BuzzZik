@@ -8,7 +8,8 @@ namespace BuzzZikApi.Core.Models
         public string Name { get; set; } = string.Empty;
         public bool IsLeader { get; set; } = false;
         public bool IsConnected { get; set; } = true;
-        public string TeamId { get; set; } = string.Empty;
+        public string TeamId { get; set; } = string.Empty; 
+        public bool IsReady { get; set; } = false;
         public string ConnectionId { get; set; } = string.Empty;
     }
 }
