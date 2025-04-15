@@ -18,6 +18,10 @@ export default function JoinGamePage() {
 
         try {
             setIsLoading(true);
+
+            // Stocker le nom du joueur pour les reconnexions
+            localStorage.setItem('playerName', playerName)
+
             setError(null);
 
             // 1. Vérifier si la partie existe

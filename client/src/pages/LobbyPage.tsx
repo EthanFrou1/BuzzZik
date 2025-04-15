@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import { signalRService, Player, Team } from "../services/signalRService";
 import { apiService } from "../services/apiService";
 import TeamCreation from "../components/TeamCreation";
-import { Cat, Dog, Bird, Fish, Snail, Rabbit, Plus, UserPlus } from "lucide-react";
+import { Cat, Dog, Bird, Fish, Snail, Rabbit, Plus, UserPlus, Crown, Check, Clock } from "lucide-react";
 
 export default function LobbyPage() {
     const { code } = useParams<{ code: string }>();
@@ -13,6 +13,7 @@ export default function LobbyPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isLeader, setIsLeader] = useState(false);
+    const [isReady, setIsReady] = useState(false);
     const [gameInfo, setGameInfo] = useState<{ theme: string; maxRounds: number } | null>(null);
     const [showCreateTeam, setShowCreateTeam] = useState(false);
     const [currentPlayerTeamId, setCurrentPlayerTeamId] = useState<string | undefined>(undefined);
@@ -70,13 +71,28 @@ export default function LobbyPage() {
         return teams.length < maxTeams;
     };
 
+    // Vérifier si tous les joueurs sont prêts
+    const areAllPlayersReady = () => {
+        // Filtrer les joueurs qui sont dans une équipe et connectés
+        const teamPlayers = players.filter(p => p.teamId && p.isConnected);
+        if (teamPlayers.length === 0) return false;
+
+        // Vérifier si tous ces joueurs sont prêts
+        return teamPlayers.every(p => p.isReady);
+    };
+
     useEffect(() => {
+        // Initialiser le précédent ConnectionId depuis le localStorage
+        signalRService.initPreviousConnectionId();
+
         // Fonction pour nettoyer les gestionnaires d'événements
         const cleanupEventHandlers = () => {
             if (signalRService.hasConnection()) {
                 signalRService.off("PlayerJoined");
+                signalRService.off("PlayerReconnected");
                 signalRService.off("TeamCreated");
                 signalRService.off("PlayerJoinedTeam");
+                signalRService.off("PlayerReadyChanged");
                 signalRService.off("GameStarted");
                 signalRService.off("Error");
             }
@@ -126,6 +142,20 @@ export default function LobbyPage() {
                     }
                 });
 
+                signalRService.on<Player>("PlayerReconnected", (player) => {
+                    setPlayers(prev => prev.map(p =>
+                        p.id === player.id ? player : p
+                    ));
+
+                    if (player.connectionId === connId) {
+                        setIsLeader(player.isLeader);
+                        setIsReady(player.isReady);
+                        if (player.teamId) {
+                            setCurrentPlayerTeamId(player.teamId);
+                        }
+                    }
+                });
+
                 signalRService.on<Team>("TeamCreated", (team) => {
                     setTeams(prev => {
                         // Vérifier si l'équipe existe déjà
@@ -153,6 +183,18 @@ export default function LobbyPage() {
                     }
                 });
 
+                signalRService.on<Player>("PlayerReadyChanged", (player) => {
+                    // Mettre à jour le joueur dans la liste
+                    setPlayers(prev => prev.map(p =>
+                        p.id === player.id ? player : p
+                    ));
+
+                    // Mettre à jour l'état local si c'est le joueur actuel
+                    if (player.connectionId === connId) {
+                        setIsReady(player.isReady);
+                    }
+                });
+
                 signalRService.on("GameStarted", () => {
                     navigate(`/game/${code}`);
                 });
@@ -174,6 +216,7 @@ export default function LobbyPage() {
 
                     if (currentPlayer) {
                         setIsLeader(currentPlayer.isLeader);
+                        setIsReady(currentPlayer.isReady);
                         if (currentPlayer.teamId) {
                             setCurrentPlayerTeamId(currentPlayer.teamId);
                         }
@@ -210,9 +253,15 @@ export default function LobbyPage() {
         if (!code) return;
 
         // Vérifier que tous les joueurs ont une équipe avant de commencer
-        const playersWithoutTeam = players.filter(p => !p.teamId);
+        const playersWithoutTeam = players.filter(p => !p.teamId && p.isConnected);
         if (playersWithoutTeam.length > 0) {
             setError("Tous les joueurs doivent rejoindre une équipe avant de commencer");
+            return;
+        }
+
+        // Vérifier que tous les joueurs sont prêts
+        if (!areAllPlayersReady()) {
+            setError("Tous les joueurs doivent être prêts avant de commencer");
             return;
         }
 
@@ -238,6 +287,25 @@ export default function LobbyPage() {
         }
     };
 
+    // Fonction pour changer le statut prêt du joueur
+    const toggleReadyStatus = async () => {
+        try {
+            // Ne peut pas se mettre prêt si pas dans une équipe
+            if (!currentPlayerTeamId) {
+                setError("Vous devez rejoindre une équipe avant de vous marquer comme prêt");
+                return;
+            }
+
+            // Inverser l'état actuel
+            const newReadyStatus = !isReady;
+            await signalRService.setPlayerReady(newReadyStatus);
+            setIsReady(newReadyStatus);
+        } catch (err) {
+            console.error("Erreur lors du changement de statut:", err);
+            setError("Impossible de changer votre statut");
+        }
+    };
+
     if (isLoading) {
         return (
             <div className="min-h-screen bg-gradient-to-b from-[#1e1e2f] to-[#11111c] text-white flex flex-col items-center justify-center">
@@ -259,6 +327,10 @@ export default function LobbyPage() {
             </div>
         );
     }
+
+    // Compter les joueurs prêts
+    const readyPlayersCount = players.filter(p => p.isReady && p.teamId && p.isConnected).length;
+    const totalTeamPlayersCount = players.filter(p => p.teamId && p.isConnected).length;
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-[#1e1e2f] to-[#11111c] text-white flex flex-col items-center p-6 relative">
@@ -307,14 +379,26 @@ export default function LobbyPage() {
                                 className="w-14 h-14 rounded-full mb-2 border-2 border-purple-400"
                             />
                             <div className="font-semibold text-purple-300">{player.name}</div>
+                            {/* Badge Leader */}
                             {player.isLeader && (
-                                <div className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded-full mt-1">
-                                    Leader
+                                <div className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded-full mt-1 flex items-center">
+                                    <Crown size={12} className="mr-1" /> Host
                                 </div>
                             )}
+                            {/* Badge Équipe */}
                             {player.teamId && (
                                 <div className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full mt-1">
                                     {teams.find(t => t.id === player.teamId)?.name || "Équipe"}
+                                </div>
+                            )}
+                            {/* Badge Prêt */}
+                            {player.teamId && (
+                                <div className={`text-xs ${player.isReady ? "bg-green-500/20 text-green-300" : "bg-gray-500/20 text-gray-300"} px-2 py-0.5 rounded-full mt-1 flex items-center`}>
+                                    {player.isReady ? (
+                                        <><Check size={12} className="mr-1" /> Prêt</>
+                                    ) : (
+                                        <><Clock size={12} className="mr-1" /> En attente</>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -387,11 +471,20 @@ export default function LobbyPage() {
                                                             className="w-8 h-8 rounded-full mr-2"
                                                         />
                                                         <span>{player.name}</span>
+                                                        {/* Badge Leader */}
                                                         {player.isLeader && (
-                                                            <span className="ml-2 text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded-full">
-                                                                Capitaine
+                                                            <span className="ml-2 text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded-full flex items-center">
+                                                                <Crown size={12} className="mr-1" /> Host
                                                             </span>
                                                         )}
+                                                        {/* Badge Prêt */}
+                                                        <span className={`ml-auto text-xs ${player.isReady ? "bg-green-500/20 text-green-300" : "bg-gray-500/20 text-gray-300"} px-2 py-0.5 rounded-full flex items-center`}>
+                                                            {player.isReady ? (
+                                                                <><Check size={12} className="mr-1" /> Prêt</>
+                                                            ) : (
+                                                                <><Clock size={12} className="mr-1" /> En attente</>
+                                                            )}
+                                                        </span>
                                                     </div>
                                                 ))
                                             }
@@ -429,8 +522,8 @@ export default function LobbyPage() {
                                                     />
                                                     <span>{player.name}</span>
                                                     {player.isLeader && (
-                                                        <span className="ml-2 text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded-full">
-                                                            Leader
+                                                        <span className="ml-2 text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded-full flex items-center">
+                                                            <Crown size={12} className="mr-1" /> Host
                                                         </span>
                                                     )}
                                                     {player.connectionId === currentConnectionId && (
@@ -462,13 +555,53 @@ export default function LobbyPage() {
                 </>
             )}
 
+            {/* Section statut des joueurs et bouton prêt */}
+            <div className="w-full max-w-md mt-8 mb-4">
+                <div className="flex flex-col items-center">
+                    <div className="flex items-center justify-center mb-2">
+                        <div className="h-2 bg-gray-300 rounded-full w-64 mr-3">
+                            <div
+                                className="h-2 bg-green-400 rounded-full"
+                                style={{ width: `${(readyPlayersCount / totalTeamPlayersCount) * 100}%` }}
+                            ></div>
+                        </div>
+                        <span className="text-sm text-gray-300">
+                            {readyPlayersCount}/{totalTeamPlayersCount} prêts
+                        </span>
+                    </div>
+
+                    {/* Bouton prêt (pour tous les joueurs sauf le host) */}
+                    {currentPlayerTeamId && (
+                        <button
+                            onClick={toggleReadyStatus}
+                            className={`${isReady
+                                    ? "bg-green-500 hover:bg-green-600"
+                                    : "bg-gray-500 hover:bg-gray-600"
+                                } text-white font-semibold py-2 px-6 rounded-xl flex items-center`}
+                        >
+                            {isReady ? (
+                                <>
+                                    <Check size={16} className="mr-2" />
+                                    Je suis prêt
+                                </>
+                            ) : (
+                                <>
+                                    <Clock size={16} className="mr-2" />
+                                    Se marquer prêt
+                                </>
+                            )}
+                        </button>
+                    )}
+                </div>
+            </div>
+
             {/* Bouton pour démarrer la partie */}
-            <div className="mt-8">
+            <div className="mt-2">
                 {isLeader ? (
                     <button
                         onClick={handleStartGame}
-                        disabled={teams.length < 1 || players.some(p => !p.teamId)}
-                        className={`${teams.length < 1 || players.some(p => !p.teamId)
+                        disabled={teams.length < 1 || players.some(p => p.isConnected && p.teamId && !p.isReady)}
+                        className={`${teams.length < 1 || players.some(p => p.isConnected && p.teamId && !p.isReady)
                                 ? "bg-purple-500/50 cursor-not-allowed"
                                 : "bg-purple-500 hover:bg-purple-600"
                             } text-white font-semibold py-3 px-8 rounded-xl shadow`}
@@ -487,9 +620,15 @@ export default function LobbyPage() {
                     </p>
                 )}
 
-                {isLeader && players.some(p => !p.teamId) && (
+                {isLeader && players.some(p => !p.teamId && p.isConnected) && (
                     <p className="text-xs text-yellow-300 mt-2 text-center">
                         Tous les joueurs doivent rejoindre une équipe
+                    </p>
+                )}
+
+                {isLeader && !areAllPlayersReady() && (
+                    <p className="text-xs text-yellow-300 mt-2 text-center">
+                        Tous les joueurs doivent être prêts
                     </p>
                 )}
             </div>

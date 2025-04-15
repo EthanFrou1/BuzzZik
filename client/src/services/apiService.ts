@@ -29,6 +29,7 @@ export interface PlayerResponse {
     name: string;
     isLeader: boolean;
     isConnected: boolean;
+    isReady: boolean;
     teamId: string;
     connectionId: string;
 }

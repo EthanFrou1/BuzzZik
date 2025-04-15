@@ -23,6 +23,10 @@ export default function GamePage() {
 
         try {
             setIsLoading(true);
+
+            // Stocker le nom du joueur pour les reconnexions
+            localStorage.setItem('playerName', playerName);
+
             setError(null);
 
             // 1. Appel à l'API pour créer une partie

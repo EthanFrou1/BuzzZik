@@ -6,6 +6,7 @@ export interface Player {
     name: string;
     isLeader: boolean;
     isConnected: boolean;
+    isReady: boolean; // Ajout du statut prêt
     teamId: string;
     connectionId: string;
 }
@@ -21,6 +22,7 @@ export interface Team {
 // Class de service SignalR
 class SignalRService {
     private connection: signalR.HubConnection | null = null;
+    private previousConnectionId: string | null = null;
 
     /**
      * Vérifie si une connexion existe
@@ -86,7 +88,19 @@ class SignalRService {
             throw new Error("Connexion non établie");
         }
 
-        await this.connection.invoke("JoinGame", gameCode, playerName);
+        // Passer l'ancien ConnectionId pour permettre la reconnexion
+        await this.connection.invoke("JoinGame", gameCode, playerName, this.previousConnectionId);
+
+        // Stocker le connectionId actuel pour les futurs rafraîchissements
+        this.previousConnectionId = await this.getConnectionId();
+        localStorage.setItem('connectionId', this.previousConnectionId);
+    }
+
+    /**
+     * Initialiser le précédent ConnectionId depuis le localStorage
+     */
+    public initPreviousConnectionId(): void {
+        this.previousConnectionId = localStorage.getItem('connectionId');
     }
 
     /**
@@ -109,6 +123,17 @@ class SignalRService {
         }
 
         await this.connection.invoke("JoinTeam", teamId);
+    }
+
+    /**
+     * Définir si le joueur est prêt
+     */
+    public async setPlayerReady(isReady: boolean): Promise<void> {
+        if (!this.connection) {
+            throw new Error("Connexion non établie");
+        }
+
+        await this.connection.invoke("SetPlayerReady", isReady);
     }
 
     /**
@@ -156,11 +181,16 @@ class SignalRService {
     }
 
     /**
-     * Arrêter la connexion
-     */
+    * Arrêter la connexion
+    */
     public async stop(): Promise<void> {
         if (this.connection) {
-            await this.connection.stop();
+            try {
+                await this.connection.stop();
+            } catch (err) {
+                console.warn("Erreur lors de l'arrêt de la connexion:", err);
+                // Continuer même en cas d'erreur
+            }
             this.connection = null;
         }
     }

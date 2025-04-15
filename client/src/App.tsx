@@ -4,6 +4,8 @@ import GamePage from "./pages/GamePage";
 import HowToPlayPage from "./pages/HowToPlayPage";
 import JoinGamePage from "./pages/JoinGamePage";
 import LobbyPage from "./pages/LobbyPage";
+import ResultsPage from "./pages/ResultsPage";
+import GamePlayPage from "./pages/GamePlayPage";
 import { GameProvider } from './contexts/GameContext';
 
 function App() {
@@ -16,6 +18,8 @@ function App() {
                     <Route path="/how-to-play" element={<HowToPlayPage />} />
                     <Route path="/join" element={<JoinGamePage />} />
                     <Route path="/lobby/:code" element={<LobbyPage />} />
+                    <Route path="/game/:code" element={<GamePlayPage />} />
+                    <Route path="/results/:code" element={<ResultsPage />} />
                 </Routes>
             </BrowserRouter>
         </GameProvider>

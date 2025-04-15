@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { signalRService } from "../services/signalRService";
 import { Play, Pause, Volume2, VolumeX } from "lucide-react";
@@ -45,24 +45,39 @@ export default function GamePlayPage() {
             return;
         }
 
-        // Connecter au hub SignalR si ce n'est pas déjà fait
-        if (!signalRService.hasConnection()) {
-            signalRService.startConnection(() => {
-                console.log("Connecté au hub dans le jeu");
-            }).then(() => {
-                // Setup des événements SignalR après connexion
+        // Fonction pour gérer la connexion
+        const connectToGame = async () => {
+            try {
+                // S'assurer que la connexion est fermée avant de la rouvrir pour éviter des problèmes
+                await signalRService.stop();
+
+                // Initialiser le précédent ConnectionId
+                signalRService.initPreviousConnectionId();
+
+                // Démarrer une nouvelle connexion
+                await signalRService.startConnection(() => {
+                    console.log("Connecté au hub dans le jeu");
+                });
+
+                // Configurer les événements avant de rejoindre
                 setupSignalREvents();
-            });
-        } else {
-            // Setup des événements SignalR directement
-            setupSignalREvents();
-        }
 
+                // Rejoindre le jeu avec le nom stocké
+                const playerName = localStorage.getItem('playerName') || 'Joueur';
+                await signalRService.joinGame(code, playerName);
+            } catch (err) {
+                console.error("Erreur de connexion:", err);
+                // Attendre 2 secondes avant de réessayer
+                setTimeout(connectToGame, 2000);
+            }
+        };
+
+        // Se connecter dès le chargement
+        connectToGame();
+
+        // Nettoyage à la fermeture
         return () => {
-            // Nettoyage des listeners
             cleanupSignalREvents();
-
-            // Arrêter l'audio si existant
             if (audio) {
                 audio.pause();
                 audio.currentTime = 0;
@@ -81,12 +96,19 @@ export default function GamePlayPage() {
             setShowResult(false);
             setShowTransition(false);
             setWinningTeam(null);
-            setTimeLeft(30); // Réinitialiser le timer
+            setTimeLeft(20); // Réinitialiser le timer
 
             // Charger le nouvel audio
             if (data.question.audioUrl) {
                 const newAudio = new Audio(data.question.audioUrl);
                 newAudio.loop = true;
+
+                // Ajouter des gestionnaires d'erreur
+                newAudio.onerror = (e) => {
+                    console.error("Erreur de chargement audio:", e, data.question.audioUrl);
+                    // Tu peux afficher un message ou utiliser un fichier par défaut
+                };
+
                 setAudio(newAudio);
                 setIsPlaying(false);
             }
@@ -139,6 +161,7 @@ export default function GamePlayPage() {
 
         // Événement pour le timer
         signalRService.on<number>("TimerUpdate", (seconds) => {
+            console.log("Mise à jour du timer:", seconds);
             setTimeLeft(seconds);
         });
 
@@ -176,19 +199,12 @@ export default function GamePlayPage() {
         }
     }, [audio, isPlaying, isMuted]);
 
-    // Gestion du timer
-    useEffect(() => {
-        if (timeLeft <= 0 && !isAnswerSubmitted && currentQuestion) {
-            // Si le temps est écoulé et qu'aucune réponse n'a été soumise,
-            // soumettre une réponse vide automatiquement
-            handleAnswerSubmit("");
-        }
-    }, [timeLeft, isAnswerSubmitted, currentQuestion]);
 
-    // Soumission de réponse
-    const handleAnswerSubmit = (answer: string) => {
+    // Création d'une référence stable pour handleAnswerSubmit
+    const handleAnswerSubmit = useCallback((answer: string) => {
         if (isAnswerSubmitted || !code) return;
 
+        console.log("Soumission de la réponse:", answer);
         setSelectedAnswer(answer);
         setIsAnswerSubmitted(true);
 
@@ -198,7 +214,15 @@ export default function GamePlayPage() {
                 console.error("Erreur lors de la soumission de la réponse:", err);
                 setIsAnswerSubmitted(false);
             });
-    };
+    }, [isAnswerSubmitted, code]);
+
+    // Gestion du timer
+    useEffect(() => {
+        if (timeLeft <= 0 && !isAnswerSubmitted && currentQuestion) {
+            console.log("Temps écoulé, soumission automatique d'une réponse vide");
+            handleAnswerSubmit("");
+        }
+    }, [timeLeft, isAnswerSubmitted, currentQuestion, handleAnswerSubmit]);
 
     // Contrôle de la lecture audio
     const togglePlayPause = () => {
@@ -219,7 +243,45 @@ export default function GamePlayPage() {
     if (!currentQuestion || !currentGame) {
         return (
             <div className="min-h-screen bg-gradient-to-b from-[#1e1e2f] to-[#11111c] text-white flex flex-col items-center justify-center">
-                <div className="animate-pulse text-purple-400 text-xl">Chargement du jeu...</div>
+                <div className="animate-pulse text-purple-400 text-xl mb-6">Chargement du jeu...</div>
+
+                <div className="flex flex-col space-y-4">
+                    <button
+                        onClick={async () => {
+                            try {
+                                // Fermer la connexion existante
+                                await signalRService.stop();
+
+                                // Établir une nouvelle connexion
+                                await signalRService.startConnection(() => {
+                                    console.log("Reconnexion manuelle réussie");
+                                });
+
+                                // Réinitialiser les événements
+                                setupSignalREvents();
+
+                                // Rejoindre manuellement avec le code
+                                const playerName = localStorage.getItem('playerName') || 'Joueur';
+                                await signalRService.joinGame(code || "", playerName);
+                            } catch (err) {
+                                console.error("Erreur lors de la reconnexion:", err);
+                            }
+                        }}
+                        className="bg-purple-500 hover:bg-purple-600 text-white py-3 px-6 rounded-xl shadow-lg text-lg"
+                    >
+                        Rejoindre la partie
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            // Rafraîchir la page complètement
+                            window.location.reload();
+                        }}
+                        className="bg-white/10 hover:bg-white/20 text-white py-3 px-6 rounded-xl shadow-lg text-lg"
+                    >
+                        Rafraîchir la page
+                    </button>
+                </div>
             </div>
         );
     }
