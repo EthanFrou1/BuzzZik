@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BuzzZikApi.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f994f005f3bc89f326b4eaa362a3b74685e1cd0e")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+574ab54d186a74bbf50ac06eb74c88f671cc7c4e")]
 [assembly: System.Reflection.AssemblyProductAttribute("BuzzZikApi.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BuzzZikApi.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

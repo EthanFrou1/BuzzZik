@@ -17,7 +17,7 @@ namespace BuzzZikApi.Api.Hubs
             _context = context;
         }
 
-        public async Task JoinGame(string gameCode, string playerName)
+        public async Task JoinGame(string gameCode, string playerName, string previousConnectionId = null)
         {
             try
             {
@@ -29,9 +29,89 @@ namespace BuzzZikApi.Api.Hubs
                     return;
                 }
 
+                // Vérifier si le joueur existe déjà (cas d'un refresh de page)
+                var existingPlayer = !string.IsNullOrEmpty(previousConnectionId)
+                    ? _context.Players.FirstOrDefault(p => p.ConnectionId == previousConnectionId)
+                    : null;
+
+                // Ajouter toujours au groupe SignalR, même si la partie a déjà commencé
+                await Groups.AddToGroupAsync(Context.ConnectionId, gameCode);
+
+                if (existingPlayer != null)
+                {
+                    // Mettre à jour le connectionId
+                    existingPlayer.ConnectionId = Context.ConnectionId;
+                    existingPlayer.IsConnected = true;
+                    await _context.SaveChangesAsync();
+
+                    // Si la partie est en cours, envoyer la question actuelle
+                    if (game.Status == "in_progress")
+                    {
+                        var currentQuestionId = game.QuestionIds.ElementAtOrDefault(game.CurrentRound - 1);
+                        if (!string.IsNullOrEmpty(currentQuestionId))
+                        {
+                            var question = _context.Questions.Find(currentQuestionId);
+                            if (question != null)
+                            {
+                                await Clients.Caller.SendAsync("NewQuestion", new
+                                {
+                                    question,
+                                    game = new
+                                    {
+                                        game.CurrentRound,
+                                        game.MaxRounds,
+                                        game.Theme,
+                                        game.Status
+                                    }
+                                });
+
+                                // Envoyer l'état actuel du timer
+                                await Clients.Caller.SendAsync("TimerUpdate", game.RoundTimer);
+                            }
+                        }
+                    }
+
+                    // Informer les autres de la reconnexion
+                    await Clients.Group(gameCode).SendAsync("PlayerReconnected", existingPlayer);
+                    return;
+                }
+
+                // Si la partie est déjà en cours, permettre quand même de rejoindre pour les observateurs
                 if (game.Status != "waiting")
                 {
-                    await Clients.Caller.SendAsync("Error", "La partie a déjà commencé.");
+                    // Créer un nouveau joueur comme observateur
+                    var observer = new Player
+                    {
+                        Name = playerName,
+                        ConnectionId = Context.ConnectionId,
+                        IsConnected = true,
+                        IsReady = true // Automatiquement prêt pour ne pas bloquer
+                    };
+
+                    _context.Players.Add(observer);
+                    await _context.SaveChangesAsync();
+
+                    // Envoyer la question actuelle
+                    var currentQuestionId = game.QuestionIds.ElementAtOrDefault(game.CurrentRound - 1);
+                    if (!string.IsNullOrEmpty(currentQuestionId))
+                    {
+                        var question = _context.Questions.Find(currentQuestionId);
+                        if (question != null)
+                        {
+                            await Clients.Caller.SendAsync("NewQuestion", new
+                            {
+                                question,
+                                game = new
+                                {
+                                    game.CurrentRound,
+                                    game.MaxRounds,
+                                    game.Theme,
+                                    game.Status
+                                }
+                            });
+                        }
+                    }
+
                     return;
                 }
 
@@ -40,14 +120,12 @@ namespace BuzzZikApi.Api.Hubs
                 {
                     Name = playerName,
                     ConnectionId = Context.ConnectionId,
-                    IsConnected = true
+                    IsConnected = true,
+                    IsReady = false // Initialiser le joueur comme non prêt
                 };
 
                 _context.Players.Add(player);
                 await _context.SaveChangesAsync();
-
-                // Ajouter le joueur à un groupe SignalR pour cette partie
-                await Groups.AddToGroupAsync(Context.ConnectionId, gameCode);
 
                 // Si c'est le premier joueur, il devient le leader
                 var playersInGame = _context.Players.Count(p => p.IsConnected);
@@ -225,6 +303,10 @@ namespace BuzzZikApi.Api.Hubs
 
                 player.TeamId = teamId;
                 team.PlayerIds.Add(player.Id);
+
+                // Réinitialiser le statut prêt quand on change d'équipe
+                player.IsReady = false;
+
                 await _context.SaveChangesAsync();
 
                 var gameCode = _context.Games
@@ -233,6 +315,46 @@ namespace BuzzZikApi.Api.Hubs
                 if (!string.IsNullOrEmpty(gameCode))
                 {
                     await Clients.Group(gameCode).SendAsync("PlayerJoinedTeam", new { player, team });
+                }
+            }
+            catch (Exception ex)
+            {
+                await Clients.Caller.SendAsync("Error", $"Erreur: {ex.Message}");
+            }
+        }
+
+        // Nouvelle méthode pour marquer un joueur comme prêt
+        public async Task SetPlayerReady(bool isReady)
+        {
+            try
+            {
+                var player = _context.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
+                if (player == null)
+                {
+                    await Clients.Caller.SendAsync("Error", "Joueur non trouvé.");
+                    return;
+                }
+
+                // Ne peut pas se mettre prêt si pas dans une équipe
+                if (string.IsNullOrEmpty(player.TeamId))
+                {
+                    await Clients.Caller.SendAsync("Error", "Vous devez rejoindre une équipe avant de vous marquer comme prêt.");
+                    return;
+                }
+
+                player.IsReady = isReady;
+                await _context.SaveChangesAsync();
+
+                // Trouver le code de la partie du joueur
+                var team = _context.Teams.Find(player.TeamId);
+                if (team == null) return; // Le joueur n'est pas dans une équipe
+
+                var gameCode = _context.Games
+                    .FirstOrDefault(g => g.TeamIds.Contains(team.Id))?.Code;
+
+                if (!string.IsNullOrEmpty(gameCode))
+                {
+                    await Clients.Group(gameCode).SendAsync("PlayerReadyChanged", player);
                 }
             }
             catch (Exception ex)
@@ -273,6 +395,17 @@ namespace BuzzZikApi.Api.Hubs
                 if (playersNotInTeam.Any())
                 {
                     await Clients.Caller.SendAsync("Error", "Tous les joueurs doivent rejoindre une équipe avant de commencer.");
+                    return;
+                }
+
+                // Vérifier que tous les joueurs sont prêts
+                var playersNotReady = _context.Players
+                    .Where(p => p.IsConnected && !string.IsNullOrEmpty(p.TeamId) && !p.IsReady)
+                    .ToList();
+
+                if (playersNotReady.Any())
+                {
+                    await Clients.Caller.SendAsync("Error", "Tous les joueurs doivent être prêts pour commencer.");
                     return;
                 }
 
@@ -438,6 +571,7 @@ namespace BuzzZikApi.Api.Hubs
                 var game = _context.Games.FirstOrDefault(g => g.Code == gameCode);
                 if (game == null)
                 {
+                    Console.WriteLine($"RoundEnd: Jeu introuvable pour le code {gameCode}");
                     return;
                 }
 
@@ -445,14 +579,19 @@ namespace BuzzZikApi.Api.Hubs
                 var currentQuestionId = game.QuestionIds.ElementAtOrDefault(game.CurrentRound - 1);
                 if (string.IsNullOrEmpty(currentQuestionId))
                 {
+                    Console.WriteLine($"RoundEnd: Question introuvable pour la manche {game.CurrentRound}");
                     return;
                 }
 
                 var question = _context.Questions.Find(currentQuestionId);
                 if (question == null)
                 {
+                    Console.WriteLine($"RoundEnd: Question introuvable pour l'ID {currentQuestionId}");
                     return;
                 }
+
+                Console.WriteLine($"RoundEnd: Fin de la manche {game.CurrentRound} pour la partie {gameCode}");
+
 
                 // Préparer les informations sur les équipes pour l'affichage des résultats
                 var teamsInfo = _context.Teams
@@ -529,6 +668,7 @@ namespace BuzzZikApi.Api.Hubs
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Erreur dans RoundEnd: {ex.Message}");
                 await Clients.Group(gameCode).SendAsync("Error", $"Erreur: {ex.Message}");
             }
         }
@@ -539,6 +679,28 @@ namespace BuzzZikApi.Api.Hubs
             {
                 await Clients.Group(gameCode).SendAsync("TimerUpdate", i);
                 await Task.Delay(1000);
+            }
+
+            // À la fin du timer, si les équipes n'ont pas toutes répondu, forcer la fin de la manche
+            var game = _context.Games.FirstOrDefault(g => g.Code == gameCode);
+            if (game != null && game.Status == "in_progress")
+            {
+                bool allTeamsAnswered = true;
+                foreach (var teamId in game.TeamIds)
+                {
+                    var team = _context.Teams.Find(teamId);
+                    if (team != null && team.CurrentAnswer == null)
+                    {
+                        allTeamsAnswered = false;
+                        break;
+                    }
+                }
+
+                // Si toutes les équipes n'ont pas répondu, forcer la fin de la manche
+                if (!allTeamsAnswered)
+                {
+                    await RoundEnd(gameCode);
+                }
             }
         }
 
@@ -602,7 +764,7 @@ namespace BuzzZikApi.Api.Hubs
             }
 
             // Simuler une URL audio (dans une vraie implémentation, ce serait un vrai fichier)
-            var audioUrl = $"/audio/{theme.ToLower()}/{correctSong.Replace(" ", "_").ToLower()}.mp3";
+            var audioUrl = $"/audio/{theme.ToLower().Replace("é", "e").Replace("è", "e")}.mp4";
 
             return new Question
             {
